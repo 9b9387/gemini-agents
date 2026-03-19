@@ -12,6 +12,7 @@ license = {text = "MIT"}
 dependencies = [
     "google-genai",
     "python-dotenv",
+    "loguru",
 ]
 
 [project.optional-dependencies]

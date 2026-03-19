@@ -2,6 +2,8 @@ import json
 import os
 from google import genai
 from google.genai import types
+from loguru import logger
+from .logging_config import setup_logging
 from .constants import MODEL_ID, TOKEN_THRESHOLD, SKILLS_DIR
 from .todo import TodoManager
 from .skills import SkillLoader
@@ -17,7 +19,7 @@ def agent_loop(client, history, todo_mgr, bg_mgr, bus, tool_handlers, generate_c
     while True:
         microcompact(history)
         if estimate_tokens(history) > TOKEN_THRESHOLD:
-            print("[auto-compact triggered]")
+            logger.info("[auto-compact triggered]")
             history[:] = auto_compact(client, history)
 
         notifs = bg_mgr.drain()
@@ -51,7 +53,7 @@ def agent_loop(client, history, todo_mgr, bg_mgr, bus, tool_handlers, generate_c
                 output = handler(**dict(function_call.args)) if handler else f"Unknown tool: {function_call.name}"
             except Exception as e:
                 output = f"Error: {e}"
-            print(f"> {function_call.name}: {str(output)[:200]}")
+            logger.info(f"Tool call: {function_call.name}({dict(function_call.args)}) -> {str(output)[:200]}")
             result_parts.append(
                 types.Part.from_function_response(
                     name=function_call.name,
@@ -69,7 +71,7 @@ def agent_loop(client, history, todo_mgr, bg_mgr, bus, tool_handlers, generate_c
             rounds_without_todo = 0
 
         if manual_compress:
-            print("[manual compact]")
+            logger.info("[manual compact]")
             history[:] = auto_compact(client, history)
 
 def print_history(history: list[types.Content]):
@@ -90,6 +92,7 @@ def print_history(history: list[types.Content]):
 from dotenv import load_dotenv
 
 def main():
+    setup_logging()
     load_dotenv()
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     todo_mgr = TodoManager()
@@ -120,7 +123,7 @@ def main():
             break
         if cmd == "/compact":
             if history:
-                print("[manual compact via /compact]")
+                logger.info("[manual compact via /compact]")
                 history[:] = auto_compact(client, history)
             continue
         if cmd == "/tasks":

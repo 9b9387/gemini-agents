@@ -2,6 +2,7 @@ import json
 import threading
 import time
 import uuid
+from loguru import logger
 from google.genai import types
 from .constants import TEAM_DIR, WORKDIR, MODEL_ID, IDLE_TIMEOUT, POLL_INTERVAL, TASKS_DIR
 from .utils import run_bash, run_read, run_write, run_edit
@@ -212,7 +213,7 @@ class TeammateManager:
                         output = "Entering idle phase."
                     else:
                         output = self._exec(name, function_call.name, dict(function_call.args))
-                    print(f"  [{name}] {function_call.name}: {str(output)[:120]}")
+                    logger.info(f"Team '{name}' tool: {function_call.name}({dict(function_call.args)}) -> {str(output)[:120]}")
                     result_parts.append(
                         types.Part.from_function_response(
                             name=function_call.name,
