@@ -14,6 +14,9 @@ dependencies = [
     "python-dotenv",
     "loguru",
     "questionary",
+    "websockets",
+    "pydantic",
+    "python-telegram-bot",
 ]
 
 [project.optional-dependencies]
@@ -23,7 +26,9 @@ dev = [
 ]
 
 [project.scripts]
+gemini-gateway = "agents.gateway:main"
 gemini-agent = "agents.agent:main"
+gemini-agent-cli = "agents.channels.cli:main"
 
 [tool.ruff]
 line-length = 88

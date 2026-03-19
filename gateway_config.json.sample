@@ -1,0 +1,14 @@
+{
+    "channels": [
+        {
+            "type": "telegram",
+            "enabled": true,
+            "token": "${TELEGRAM_TOKEN}"
+        }
+    ],
+    "routing_rules": {
+        "cli": ["agent"],
+        "telegram": ["agent"],
+        "agent": ["cli", "telegram"]
+    }
+}
