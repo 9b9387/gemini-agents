@@ -13,6 +13,7 @@ dependencies = [
     "google-genai",
     "python-dotenv",
     "loguru",
+    "questionary",
 ]
 
 [project.optional-dependencies]

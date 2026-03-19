@@ -1,5 +1,7 @@
 import json
 import os
+import questionary
+from questionary.constants import DEFAULT_SELECTED_POINTER
 from google import genai
 from google.genai import types
 from loguru import logger
@@ -25,6 +27,7 @@ def agent_loop(client, history, todo_mgr, bg_mgr, bus, tool_handlers, generate_c
         notifs = bg_mgr.drain()
         if notifs:
             text = "\n".join(f"[bg:{n['task_id']}] {n['status']}: {n['result']}" for n in notifs)
+            logger.debug(f"Background notifications: {text}")
             history.append(types.Content(role="user", parts=[types.Part.from_text(text=f"<background-results>\n{text}\n</background-results>")]))
             history.append(types.Content(role="model", parts=[types.Part.from_text(text="Noted background results.")]))
 
@@ -53,7 +56,7 @@ def agent_loop(client, history, todo_mgr, bg_mgr, bus, tool_handlers, generate_c
                 output = handler(**dict(function_call.args)) if handler else f"Unknown tool: {function_call.name}"
             except Exception as e:
                 output = f"Error: {e}"
-            logger.info(f"Tool call: {function_call.name}({dict(function_call.args)}) -> {str(output)[:200]}")
+            logger.debug(f"Tool call: {function_call.name}({dict(function_call.args)}) -> {str(output)[:200]}")
             result_parts.append(
                 types.Part.from_function_response(
                     name=function_call.name,
@@ -104,7 +107,7 @@ def main():
 
     tool_handlers = get_tool_handlers(todo_mgr, skill_loader, task_mgr, bg_mgr, bus, team_mgr, client)
     
-    system_instruction = f"You are a coding agent. Use tools to solve tasks. Skills: {skill_loader.descriptions()}"
+    system_instruction = f"You are a coding agent. Use tools to solve tasks. Skills: {skill_loader.descriptions()}. Providing clear summaries after completing tasks."
     generate_config = types.GenerateContentConfig(
         system_instruction=system_instruction,
         tools=[TOOLS],
@@ -114,7 +117,9 @@ def main():
     history = []
     while True:
         try:
-            query = input("\033[36mgemini-agents >> \033[0m")
+            query = questionary.text("", qmark=DEFAULT_SELECTED_POINTER).ask()
+            if query is None:  # Handle Ctrl-C or other cancellation
+                break
         except (EOFError, KeyboardInterrupt):
             break
 
@@ -140,12 +145,19 @@ def main():
             continue
 
         history.append(types.Content(role="user", parts=[types.Part.from_text(text=query)]))
+        logger.debug(f"User query: {query}")
         agent_loop(client, history, todo_mgr, bg_mgr, bus, tool_handlers, generate_config)
 
         last_content = history[-1]
+        first_part = True
         for part in (last_content.parts or []):
             if hasattr(part, "text") and part.text:
-                print(part.text)
+                logger.debug(f"Model response: {part.text}")
+                if first_part:
+                    print(f"\n{part.text}")
+                    first_part = False
+                else:
+                    print(part.text)
         print()
 
 if __name__ == "__main__":
