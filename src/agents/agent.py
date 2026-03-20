@@ -179,7 +179,8 @@ def main():
     system_instruction = (
         f"You are a coding agent. Use tools to solve tasks. "
         f"Skills: {skill_loader.descriptions()}. "
-        f"Providing clear summaries after completing tasks."
+        f"IMPORTANT: "
+        f"Never end a turn with only a tool result; always explain what was found or done. Provide a clear, helpful summary or response to the user."
     )
     generate_config = types.GenerateContentConfig(
         system_instruction=system_instruction,

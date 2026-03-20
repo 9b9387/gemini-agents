@@ -13,11 +13,13 @@ TASKS_DIR = WORKDIR / ".tasks"
 SKILLS_DIR = WORKDIR / "skills"
 TRANSCRIPT_DIR = WORKDIR / ".transcripts"
 LOGS_DIR = WORKDIR / "logs"
+OWLET_DIR = WORKDIR / ".owlet"
 
 # Gateway Configuration
 GATEWAY_HOST = os.environ.get("GATEWAY_HOST", "127.0.0.1")
 GATEWAY_PORT = int(os.environ.get("GATEWAY_PORT", 8765))
 GATEWAY_URI = f"ws://{GATEWAY_HOST}:{GATEWAY_PORT}"
+ADMIN_API_PORT = int(os.environ.get("ADMIN_API_PORT", 8777))
 
 # Protocol Roles
 ROLE_USER = "user"
@@ -47,3 +49,6 @@ VALID_MSG_TYPES = {
     "shutdown_response",
     "plan_approval_response",
 }
+
+# Channel Config
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")

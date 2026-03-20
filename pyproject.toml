@@ -17,6 +17,9 @@ dependencies = [
     "websockets",
     "pydantic",
     "python-telegram-bot",
+    "fastapi",
+    "uvicorn",
+    "requests",
 ]
 
 [project.optional-dependencies]
@@ -29,6 +32,7 @@ dev = [
 gemini-gateway = "agents.gateway:main"
 gemini-agent = "agents.agent:main"
 gemini-agent-cli = "agents.channels.cli:main"
+owlet = "agents.commands.owlet:main"
 
 [tool.ruff]
 line-length = 88

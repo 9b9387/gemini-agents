@@ -4,10 +4,12 @@ import os
 
 import websockets
 from loguru import logger
+from dotenv import load_dotenv
 
 from .constants import (
     GATEWAY_HOST,
     GATEWAY_PORT,
+    ADMIN_API_PORT,
     METHOD_REGISTER,
     ROLE_AGENT,
     ROLE_CLI,
@@ -16,18 +18,21 @@ from .constants import (
 )
 from .logging_config import setup_logging
 from .protocol import Message
-from .channels.telegram import TelegramChannel
+from .channels.manager import ChannelManager
+from .auth import AuthManager
+from .admin import AdminServer
 
 class GatewayService:
     def __init__(self, host=GATEWAY_HOST, port=GATEWAY_PORT):
         self.host = host
         self.port = port
         self.clients = {}  # {role: set(websockets)}
-        self.internal_channels = {}  # {role: channel_instance}
+        self.auth_manager = AuthManager()
+        self.channel_manager = ChannelManager(self, self.auth_manager)
+        self.admin_server = AdminServer(self.auth_manager, self.dispatch_to_role)
         self.config_path = WORKDIR / "gateway_config.json"
         
-        # Default routing: Clients -> Agent, Agent -> All Clients
-        # TODO Update Routing Rules.
+        # Default routing
         self.routing_rules = {
             ROLE_CLI: [ROLE_AGENT],
             ROLE_TELEGRAM: [ROLE_AGENT],
@@ -35,7 +40,6 @@ class GatewayService:
         }
 
     def _expand_env_vars(self, data):
-        """Recursively expand ${VAR} strings in a dictionary or list."""
         if isinstance(data, dict):
             return {k: self._expand_env_vars(v) for k, v in data.items()}
         elif isinstance(data, list):
@@ -50,50 +54,36 @@ class GatewayService:
         if self.config_path.exists():
             try:
                 config = json.loads(self.config_path.read_text())
-                # Expand environment variables like ${TELEGRAM_TOKEN}
                 config = self._expand_env_vars(config)
-                
                 if "routing_rules" in config:
                     self.routing_rules = config["routing_rules"]
-                    logger.info(f"Loaded custom routing rules: {self.routing_rules}")
             except Exception as e:
-                logger.error(f"Failed to load config: {e}")
+                logger.error(f"Gateway: Failed to load config: {e}")
         return config
 
     async def register(self, websocket, role: str):
         if role not in self.clients:
             self.clients[role] = set()
         self.clients[role].add(websocket)
-        logger.info(f"Registered external client with role: {role}")
+        logger.info(f"Gateway: Registered external client: {role}")
 
     async def unregister(self, websocket, role: str):
         for role_set in self.clients.values():
             if websocket in role_set:
                 role_set.remove(websocket)
-                logger.info("Unregistered an external client.")
+                logger.info("Gateway: Unregistered external client.")
                 break
 
     async def handle_message(self, msg: Message):
-        """Unified entry point for both internal and external messages."""
-        # Find where this message should go based on the sender's role
         targets = self.routing_rules.get(msg.role, [])
-        if not targets:
-            logger.warning(f"No routing rules defined for role: {msg.role}")
-            return
-
         for target_role in targets:
             await self.dispatch_to_role(msg, target_role)
 
     async def dispatch_to_role(self, msg: Message, target_role: str):
-        """Dispatch a message to a specific role (internal or external)."""
-        # 1. Check Internal Channels
-        if target_role in self.internal_channels:
-            channel = self.internal_channels[target_role]
+        channel = self.channel_manager.get_channel(target_role)
+        if channel:
             asyncio.create_task(channel.send_to_user(msg.session_id, msg.content))
-            # Note: We continue even if found internal, because there might be 
-            # external clients with the same role (e.g., multiple agents).
 
-        # 2. Check External WebSocket Clients
         targets = self.clients.get(target_role, set())
         if not targets:
             return
@@ -103,17 +93,16 @@ class GatewayService:
             try:
                 await ws.send(msg_json)
             except Exception as e:
-                logger.error(f"Failed to send to {target_role}: {e}")
+                logger.error(f"Gateway: Failed to send to {target_role}: {e}")
 
     async def handle_client(self, websocket):
-        """Handle external WebSocket connections."""
         role = None
         try:
             async for message_str in websocket:
                 try:
                     msg = Message.from_json(message_str)
                 except Exception as e:
-                    logger.error(f"Parse error: {e}")
+                    logger.error(f"Gateway: Parse error: {e}")
                     continue
 
                 if msg.method == METHOD_REGISTER:
@@ -121,9 +110,7 @@ class GatewayService:
                     await self.register(websocket, role)
                     continue
 
-                # Use the unified routing logic
                 await self.handle_message(msg)
-
         except websockets.exceptions.ConnectionClosed:
             pass
         finally:
@@ -131,34 +118,21 @@ class GatewayService:
                 await self.unregister(websocket, role)
 
     async def handle_internal_message(self, msg: Message):
-        """Entry point for internal channels."""
         await self.handle_message(msg)
 
     async def start(self):
-        # 1. Start Server
+        # 1. Start WebSocket Gateway
         await websockets.serve(self.handle_client, self.host, self.port)
-        logger.info(f"Gateway server running on ws://{self.host}:{self.port}")
+        logger.info(f"Gateway WS server: ws://{self.host}:{self.port}")
 
-        # 2. Load Channels
-        config = self._load_config()
-        for ch_conf in config.get("channels", []):
-            if not ch_conf.get("enabled"):
-                continue
-                
-            ch_type = ch_conf.get("type")
-            if ch_type == "telegram":
-                token = ch_conf.get("token") or os.environ.get("TELEGRAM_TOKEN")
-                if token:
-                    channel = TelegramChannel(self, token=token)
-                    self.internal_channels[ROLE_TELEGRAM] = channel
-                    asyncio.create_task(channel.start())
-                    logger.info("Started internal Telegram channel.")
-                else:
-                    logger.warning("Telegram token missing.")
+        # 2. Start Admin API (separate module)
+        asyncio.create_task(self.admin_server.start())
+
+        # 3. Load Channels
+        config_data = self._load_config()
+        await self.channel_manager.load_from_config(config_data)
 
         await asyncio.Future()
-
-from dotenv import load_dotenv
 
 def main():
     setup_logging()
